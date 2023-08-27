@@ -1,0 +1,63 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'org.springframework.boot' version '3.1.2'
+    id 'io.spring.dependency-management' version '1.1.2'
+    id 'com.github.ben-manes.versions' version "0.47.0"
+}
+
+group = 'gitea.ramlabs.ru'
+version = '1.0-SNAPSHOT'
+
+java {
+    sourceCompatibility = '17'
+}
+
+repositories {
+    mavenCentral()
+    maven {
+        url = uri("https://maven.pkg.github.com/ram042/json")
+        credentials {
+            username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+            password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+        }
+    }
+}
+
+dependencies {
+    compileOnly 'org.projectlombok:lombok'
+
+    implementation 'tech.ydb:ydb-proto-api:1.4.1'
+    implementation 'tech.ydb:ydb-auth-api:1.0.0'
+    implementation 'tech.ydb:ydb-sdk-table:2.1.4'
+    implementation 'tech.ydb:ydb-sdk-table:2.1.4'
+    implementation 'com.yandex.ydb:ydb-sdk-table:1.45.6'
+    implementation 'tech.ydb.auth:yc-auth-provider:2.1.0'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+
+    implementation 'com.github.ram042:json:6.0'
+
+    implementation 'org.slf4j:slf4j-api:2.0.7'
+    implementation 'ch.qos.logback:logback-core:1.4.11'
+    implementation 'ch.qos.logback:logback-classic:1.4.11'
+
+    implementation ('org.springframework.boot:spring-boot-starter-web') {
+//        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-tomcat'
+    }
+//    implementation "org.springframework.boot:spring-boot-starter-undertow"
+//    implementation 'org.springframework.boot:spring-boot-starter-security'
+
+//    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+
+    testImplementation 'org.testng:testng:7.8.0'
+    testImplementation 'org.assertj:assertj-core:3.24.2'
+}
+
+run {
+    mainClass = "ru.ramlabs.gitea.stonks.Main"
+}
+
+test {
+    useTestNG()
+}
