@@ -1,16 +1,20 @@
 package ru.ramlabs.gitea.stonks.controllers;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import ru.ramlabs.gitea.stonks.api.Banks;
 import ru.ramlabs.gitea.stonks.api.Users;
+import ru.ramlabs.gitea.stonks.utils.UnsignedLongToString;
 
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 @RestController
+@Slf4j
 public class BanksController {
 
     public BanksController(Users users, Banks banks) {
@@ -72,7 +76,25 @@ public class BanksController {
     public Banks.Bank updateUserBank(@RequestBody UpdateUserBank updateUserBank, @CookieValue String auth) throws ExecutionException, InterruptedException {
         long userId = users.checkAuthAndGetUserId(auth);
         return banks.updateUserBank(userId, updateUserBank.bankId, updateUserBank.bankInfo);
+    }
 
+    public record DeleteUserBankParameters(
+            @JsonProperty("bank_id")
+            @JsonDeserialize(using = UnsignedLongToString.Deserializer.class)
+            long bankId
+    ) {
+
+    }
+
+    @DeleteMapping(path = "/api/banks",
+            consumes = "application/json",
+            produces = "application/json")
+    public void deleteUserBank(@CookieValue String auth, @RequestBody DeleteUserBankParameters updateUserBank) throws ExecutionException, InterruptedException {
+        long userId = users.checkAuthAndGetUserId(auth);
+        var deleted = banks.deleteUserBank(userId, updateUserBank.bankId);
+        if (!deleted) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Bank not found");
+        }
     }
 
 }

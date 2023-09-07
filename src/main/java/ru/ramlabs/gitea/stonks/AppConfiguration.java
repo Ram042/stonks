@@ -1,7 +1,6 @@
 package ru.ramlabs.gitea.stonks;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -29,9 +28,8 @@ import static org.springframework.security.config.Customizer.withDefaults;
 @Configuration
 @EnableWebMvc
 @EnableWebSecurity
+@Slf4j
 public class AppConfiguration {
-
-    private static final Logger LOGGER = LoggerFactory.getLogger(AppConfiguration.class);
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {

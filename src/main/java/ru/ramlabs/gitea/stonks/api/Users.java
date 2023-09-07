@@ -55,7 +55,7 @@ public class Users {
         }
 
         @Language("SQL")
-        String putUserQuery = """
+        String insertUserQuery = """
                 DECLARE $user_id AS uint64;
                 DECLARE $user_name AS utf8;
                 DECLARE $user_password AS utf8;
@@ -69,7 +69,7 @@ public class Users {
                 """;
 
         var insertResult = db.supplyResult(session -> session.executeDataQuery(
-                putUserQuery,
+                insertUserQuery,
                 TxControl.serializableRw(),
                 Params.of(
                         "$user_id", newUint64(new SecureRandom().nextLong()),

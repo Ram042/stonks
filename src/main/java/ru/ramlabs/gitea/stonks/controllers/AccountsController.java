@@ -47,11 +47,19 @@ public class AccountsController {
         accounts.createUserAccount(userId, params.name, params.description, params.bankId);
     }
 
+    public record DeleteUserAccountParameters(
+            @JsonProperty("bank_id")
+            long bankId
+    ){
+
+    }
+
     @DeleteMapping(path = "/api/accounts",
             consumes = "application/json"
     )
-    public void deleteUserAccount(@CookieValue String auth) {
-
+    public void deleteUserAccount(@CookieValue String auth,DeleteUserAccountParameters params) throws ExecutionException, InterruptedException {
+        long userId = users.checkAuthAndGetUserId(auth);
+//        accounts.deleteUserAccount(userId);
     }
 
 

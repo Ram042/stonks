@@ -7,7 +7,7 @@ import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.NotNull;
 import org.springframework.stereotype.Component;
 import ru.ramlabs.gitea.stonks.controllers.BanksController;
-import ru.ramlabs.gitea.stonks.utils.UnsignedLongToStringSerializer;
+import ru.ramlabs.gitea.stonks.utils.UnsignedLongToString;
 import tech.ydb.table.SessionRetryContext;
 import tech.ydb.table.query.Params;
 import tech.ydb.table.transaction.TxControl;
@@ -68,7 +68,7 @@ public class Banks {
 
     public record Bank(
             @JsonProperty("bank_id")
-            @JsonSerialize(using = UnsignedLongToStringSerializer.class)
+            @JsonSerialize(using = UnsignedLongToString.Serializer.class)
             long bankId,
             @JsonProperty("bank_name") String bankName,
             @JsonProperty("bank_comment") String bankComment
@@ -106,8 +106,32 @@ public class Banks {
         return banks;
     }
 
-    public boolean removeUserBank() {
-        throw new UnsupportedOperationException();
+    public boolean deleteUserBank(long userId, long bankId) throws ExecutionException, InterruptedException {
+        @Language("SQL")
+        String deleteBankQuery = """
+                DECLARE $user_id AS uint64;
+                DECLARE $bank_id AS uint64;
+                                
+                select count(*)
+                from banks
+                where user_id = $user_id and bank_id = $bank_id;
+                                
+                delete from banks
+                where user_id = $user_id and bank_id = $bank_id;
+                """;
+
+        var result = db.supplyResult(session -> session.executeDataQuery(
+                deleteBankQuery,
+                TxControl.serializableRw(),
+                Params.of(
+                        "$user_id", newUint64(userId),
+                        "$bank_id", newUint64(bankId)
+                )
+        )).get().getValue().getResultSet(0);
+
+        result.next();
+
+        return result.getColumn(0).getUint64() > 0;
     }
 
 }
