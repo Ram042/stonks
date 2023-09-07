@@ -64,11 +64,12 @@ public class UserController {
         var token = users.login(loginInfo.username, loginInfo.password);
 
         var cookie = ResponseCookie.from("auth", token)
-                .secure(true)
-                .maxAge(Duration.ofDays(30))
                 .httpOnly(true)
+                .secure(true)
                 .sameSite("strict")
+                .maxAge(Duration.ofDays(30))
                 .path("/")
+                .domain("")
                 .build();
 
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());
@@ -87,6 +88,10 @@ public class UserController {
         return new GetUserResult(username);
     }
 
+    /**
+     * Logout user by always deleting auth cookie and erasing token from database
+     * if and only if token is valid.
+     */
     @PostMapping(path = "/api/user/logout")
     public void logout(HttpServletResponse response, @CookieValue String auth) throws ExecutionException, InterruptedException {
         users.logout(auth);
@@ -96,6 +101,7 @@ public class UserController {
                 .httpOnly(true)
                 .sameSite("strict")
                 .path("/")
+                .domain("")
                 .build();
 
         response.addHeader(HttpHeaders.SET_COOKIE, cookie.toString());

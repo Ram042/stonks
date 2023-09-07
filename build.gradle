@@ -4,6 +4,7 @@ plugins {
     id 'org.springframework.boot' version '3.1.2'
     id 'io.spring.dependency-management' version '1.1.2'
     id 'com.github.ben-manes.versions' version "0.47.0"
+    id 'org.graalvm.buildtools.native' version '0.9.24'
 }
 
 group = 'gitea.ramlabs.ru'
@@ -25,13 +26,14 @@ repositories {
 }
 
 dependencies {
+    compileOnly 'org.jetbrains:annotations:24.0.1'
     compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
 
     implementation 'tech.ydb:ydb-proto-api:1.4.1'
     implementation 'tech.ydb:ydb-auth-api:1.0.0'
     implementation 'tech.ydb:ydb-sdk-table:2.1.4'
     implementation 'tech.ydb:ydb-sdk-table:2.1.4'
-    implementation 'com.yandex.ydb:ydb-sdk-table:1.45.6'
     implementation 'tech.ydb.auth:yc-auth-provider:2.1.0'
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
 
@@ -41,13 +43,16 @@ dependencies {
     implementation 'ch.qos.logback:logback-core:1.4.11'
     implementation 'ch.qos.logback:logback-classic:1.4.11'
 
-    implementation ('org.springframework.boot:spring-boot-starter-web') {
+    implementation('org.springframework.boot:spring-boot-starter-web') {
 //        exclude group: 'org.springframework.boot', module: 'spring-boot-starter-tomcat'
     }
+//    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+//    implementation 'org.springframework.boot:spring-boot-starter-data-jdbc'
 //    implementation "org.springframework.boot:spring-boot-starter-undertow"
-//    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-security'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
-//    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.springframework.security:spring-security-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
 
     testImplementation 'org.testng:testng:7.8.0'
@@ -56,6 +61,7 @@ dependencies {
 
 run {
     mainClass = "ru.ramlabs.gitea.stonks.Main"
+    systemProperties['spring.profiles.active'] = 'development'
 }
 
 test {

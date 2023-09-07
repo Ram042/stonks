@@ -1,0 +1,5 @@
+stonks:
+  db:
+    endpoint: grpcs://ydb.serverless.yandexcloud.net:2135/?database=/ru-central1/b1grjtggdv5a082vgitq/etn7mavj2rgcri31e6fi
+  captcha:
+    server_key: ysc1_JQyZprVduBOWqCNJd9oTm1JafP5qC3Qouhn9jJXa1bc95ab9

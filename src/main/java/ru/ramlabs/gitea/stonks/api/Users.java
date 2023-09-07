@@ -1,41 +1,42 @@
 package ru.ramlabs.gitea.stonks.api;
 
-import com.github.ram042.json.Json;
-import com.github.ram042.json.JsonObject;
-import com.google.common.base.Preconditions;
-import com.google.common.io.BaseEncoding;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import org.intellij.lang.annotations.Language;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
+import tech.ydb.core.Issue;
 import tech.ydb.table.SessionRetryContext;
 import tech.ydb.table.query.Params;
+import tech.ydb.table.settings.ExecuteDataQuerySettings;
 import tech.ydb.table.transaction.TxControl;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.concurrent.ExecutionException;
 import java.util.regex.Pattern;
 
-import static com.github.ram042.json.Json.object;
 import static org.springframework.http.HttpStatus.*;
+import static ru.ramlabs.gitea.stonks.api.Users.UserToken.parseAuthCookie;
 import static tech.ydb.table.values.PrimitiveValue.*;
 
+@Slf4j
 @Component
 public class Users {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(Users.class);
-
     private final SessionRetryContext db;
     private final String captchaKey;
+    private final PasswordEncoder passwordEncoder;
 
-    public Users(SessionRetryContext db) {
+    public Users(@Value("${stonks.captcha.server_key}") String captchaKey,
+                 SessionRetryContext db,
+                 PasswordEncoder passwordEncoder
+    ) {
         this.db = db;
-        captchaKey = Preconditions.checkNotNull(System.getenv("CAPTCHA_KEY"), "Captcha key not set");
+        this.passwordEncoder = passwordEncoder;
+        this.captchaKey = captchaKey;
     }
 
     private static final Pattern NAME_PATTERN = Pattern.compile("\\w+");
@@ -49,59 +50,53 @@ public class Users {
             throw new ResponseStatusException(BAD_REQUEST, "Name length must be >=3 and <=32");
         }
 
-        if (password.length() < 6 || password.length() > 256) {
-            throw new ResponseStatusException(BAD_REQUEST, "Password length must be >=6 and <=256");
+        if (password.length() < 8 || password.length() > 256) {
+            throw new ResponseStatusException(BAD_REQUEST, "Password length must be >=8 and <=256");
         }
 
-        String getUserQuery = """
-                DECLARE $user_name AS utf8;
-                SELECT `user_id`
-                FROM `users`
-                WHERE `user_name`=$user_name
-                """;
-
-        var ids = db.supplyResult(session -> session.executeDataQuery(
-                getUserQuery,
-                TxControl.serializableRw(),
-                Params.of("$user_name", newText(name.toLowerCase()))
-        )).get();
-
-        if (ids.getValue().getRowCount(0) > 0) {
-            throw new ResponseStatusException(BAD_REQUEST, "User already exists");
-        }
-
+        @Language("SQL")
         String putUserQuery = """
                 DECLARE $user_id AS uint64;
                 DECLARE $user_name AS utf8;
-                DECLARE $user_password AS json;
+                DECLARE $user_password AS utf8;
                                 
-                INSERT INTO `users` (`user_id`, `user_name`,`user_password`)
+                select ensure(0, count(*) = 0 ,"USER_EXISTS")
+                from users
+                where user_name = $user_name;
+                            
+                INSERT INTO users (user_id, user_name,user_password)
                 VALUES ($user_id, $user_name, $user_password);
                 """;
 
+        var insertResult = db.supplyResult(session -> session.executeDataQuery(
+                putUserQuery,
+                TxControl.serializableRw(),
+                Params.of(
+                        "$user_id", newUint64(new SecureRandom().nextLong()),
+                        "$user_name", newText(name.toLowerCase()),
+                        "$user_password", newText(passwordEncoder.encode(password))
+                ),
+                new ExecuteDataQuerySettings().setReportCostInfo(true)
+        )).get();
 
-        boolean success = false;
-        int tries = 3;
-        while (!success && tries > 0) {
-            var dataQueryResultResult = db.supplyResult(session -> session.executeDataQuery(
-                    putUserQuery,
-                    TxControl.serializableRw(),
-                    Params.of(
-                            "$user_id", newUint64(new SecureRandom().nextLong()),
-                            "$user_name", newText(name.toLowerCase()),
-                            "$user_password", newJson(hashPassword(password).toString())
-                    )
-            )).get();
-            LOGGER.info("Status {}", dataQueryResultResult.getStatus());
-            LOGGER.info("Put {}", dataQueryResultResult.getValue());
-            success = dataQueryResultResult.isSuccess();
-            tries--;
+        if (!insertResult.isSuccess()) {
+            log.info("Cannot register user {}", insertResult.getStatus());
+            for (Issue issue : insertResult.getStatus().getIssues()) {
+                if (issue.getMessage().contains("USER_EXISTS")) {
+                    throw new ResponseStatusException(BAD_REQUEST, "User exists");
+                }
+            }
+            throw new ResponseStatusException(BAD_REQUEST, "Cannot register");
+        }
+
+        if (insertResult.getStatus().hasConsumedRu() && insertResult.getStatus().getConsumedRu() > 0) {
+            log.info("Consumed {} RU", insertResult.getStatus().getConsumedRu());
         }
 
         return name.toLowerCase();
     }
 
-    public static String generateSalt() {
+    public static String generateSessionToken() {
         //entropy log2(26*2+10)*32 = 190 bits
         String chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
@@ -111,53 +106,6 @@ public class Users {
             salt[i] = chars.charAt(random.nextInt(0, chars.length()));
         }
         return new String(salt);
-    }
-
-    public static JsonObject hashPassword(String password) {
-        String salt = generateSalt();
-        MessageDigest digest = null;
-        try {
-            digest = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-
-        digest.update(salt.getBytes(StandardCharsets.UTF_8));
-        digest.update(":".getBytes(StandardCharsets.UTF_8));
-        digest.update(password.getBytes(StandardCharsets.UTF_8));
-
-        var hash = BaseEncoding.base64().encode(digest.digest());
-
-        return object(
-                "alg", "SHA-256",
-                "hash", hash,
-                "salt", salt
-        );
-    }
-
-    public static boolean checkPassword(JsonObject hashedPassword, String password) {
-        String salt = hashedPassword.getString("salt").string;
-        String hash = hashedPassword.getString("hash").string;
-        String alg = hashedPassword.getString("alg").string;
-
-        if (!alg.equals("SHA-256")) {
-            throw new IllegalArgumentException("Unsupported algorithm: " + alg);
-        }
-
-        MessageDigest digest = null;
-        try {
-            digest = MessageDigest.getInstance("SHA-256");
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException(e);
-        }
-
-        digest.update(salt.getBytes(StandardCharsets.UTF_8));
-        digest.update(":".getBytes(StandardCharsets.UTF_8));
-        digest.update(password.getBytes(StandardCharsets.UTF_8));
-
-        var newHash = BaseEncoding.base64().encode(digest.digest());
-
-        return hash.equals(newHash);
     }
 
     public String getAccount(String auth) throws ExecutionException, InterruptedException {
@@ -176,13 +124,13 @@ public class Users {
             throw new ResponseStatusException(BAD_REQUEST, "Bad token");
         }
 
-
+        @Language("SQL")
         String getUserSessionQuery = """
                 DECLARE $user_id AS uint64;
-                DECLARE $user_session_token AS utf8;
-                SELECT `user_id`, `user_session_token`, `user_session_expiry`
-                FROM `sessions`
-                WHERE `user_id`==$user_id and `user_session_token`==$user_session_token;
+                DECLARE $session_token AS utf8;
+                SELECT *
+                FROM sessions
+                WHERE user_id==$user_id and session_token==$session_token;
                 """;
 
         var sessionQuery = db.supplyResult(session -> session.executeDataQuery(
@@ -190,7 +138,7 @@ public class Users {
                 TxControl.serializableRw(),
                 Params.of(
                         "$user_id", newUint64(id),
-                        "$user_session_token", newText(token)
+                        "$session_token", newText(token)
                 )
         )).get();
 
@@ -198,11 +146,12 @@ public class Users {
             throw new ResponseStatusException(UNAUTHORIZED);
         }
 
+        @Language("SQL")
         String getUserInfoQuery = """
                 DECLARE $user_id AS uint64;
-                SELECT `user_id`,`user_name`
-                FROM `users`
-                WHERE `user_id`=$user_id;
+                SELECT user_id,user_name
+                FROM users
+                WHERE user_id=$user_id;
                 """;
         var userQuery = db.supplyResult(session -> session.executeDataQuery(
                 getUserInfoQuery,
@@ -215,17 +164,16 @@ public class Users {
         var resultSet = userQuery.getValue().getResultSet(0);
         resultSet.next();
 
-        var userName = resultSet.getColumn("user_name").getText();
-
-        return userName;
+        return resultSet.getColumn("user_name").getText();
     }
 
     public String login(String name, String providedPassword) throws ExecutionException, InterruptedException {
+        @Language("SQL")
         String getUserPasswordQuery = """
                 DECLARE $user_name AS utf8;
-                SELECT `user_id`, `user_password`
-                FROM `users`
-                WHERE `user_name`=$user_name
+                SELECT user_id, user_password
+                FROM users
+                WHERE user_name=$user_name
                 """;
 
         var user = db.supplyResult(session -> session.executeDataQuery(
@@ -239,21 +187,22 @@ public class Users {
         }
         var resultSet = user.getResultSet(0);
         resultSet.next();
-        var userPasswordJson = resultSet.getColumn("user_password").getJson();
+        var savedPassword = resultSet.getColumn("user_password").getText();
         var userId = resultSet.getColumn("user_id").getUint64();
 
-        if (!checkPassword(Json.parse(userPasswordJson).getAsObject(), providedPassword)) {
+        if (!passwordEncoder.matches(providedPassword, savedPassword)) {
             throw new ResponseStatusException(UNAUTHORIZED, "Bad password");
         }
 
-        var sessionToken = generateSalt();
+        var sessionToken = generateSessionToken();
 
+        @Language("SQL")
         String setUserTokenQuery = """
                 DECLARE $user_id AS uint64;
-                DECLARE $user_session_token AS utf8;
-                DECLARE $user_session_expiry AS datetime;
-                INSERT INTO `sessions` (`user_id`, `user_session_token`,`user_session_expiry`)
-                VALUES ($user_id, $user_session_token, $user_session_expiry);
+                DECLARE $session_token AS utf8;
+                DECLARE $session_expiry AS datetime;
+                INSERT INTO sessions (user_id, session_token,session_expiry)
+                VALUES ($user_id, $session_token, $session_expiry);
                 """;
 
         var dataQueryResult = db.supplyResult(session -> session.executeDataQuery(
@@ -261,13 +210,13 @@ public class Users {
                 TxControl.serializableRw(),
                 Params.of(
                         "$user_id", newUint64(userId),
-                        "$user_session_token", newText(sessionToken),
-                        "$user_session_expiry", newDatetime(Instant.now().plus(Duration.ofDays(30)))
+                        "$session_token", newText(sessionToken),
+                        "$session_expiry", newDatetime(Instant.now().plus(Duration.ofDays(30)))
                 )
         )).get();
 
         if (!dataQueryResult.isSuccess()) {
-            LOGGER.warn("Cannot save session token to db: {}", dataQueryResult.getStatus());
+            log.warn("Cannot save session token to db: {}", dataQueryResult.getStatus());
             throw new ResponseStatusException(INTERNAL_SERVER_ERROR);
         }
 
@@ -275,36 +224,53 @@ public class Users {
     }
 
     public void logout(String auth) throws ExecutionException, InterruptedException {
-        var authParts = auth.split("-");
-        if (authParts.length != 2) {
-            throw new ResponseStatusException(BAD_REQUEST, "Bad token format");
-        }
+        var token = parseAuthCookie(auth);
 
-        long id;
-        String token;
+        checkAuthAndGetUserId(auth);
+        //token is valid at this point
 
-        try {
-            id = Long.parseUnsignedLong(authParts[0]);
-            token = authParts[1];
-        } catch (Exception e) {
-            throw new ResponseStatusException(BAD_REQUEST, "Bad token");
-        }
+        @Language("SQL")
+        String removeUserSessionQuery = """
+                DECLARE $user_id AS uint64;
+                DECLARE $session_token AS utf8;
+                DELETE from sessions
+                WHERE user_id==$user_id and session_token==$session_token;
+                """;
+        db.supplyResult(session -> session.executeDataQuery(
+                removeUserSessionQuery,
+                TxControl.serializableRw(),
+                Params.of(
+                        "$user_id", newUint64(token.userId()),
+                        "$session_token", newText(token.token())
+                )
+        )).get();
+    }
 
+    /**
+     * Check token validity and extract user id from it.
+     *
+     * @param auth auth string
+     * @return user id
+     * @throws ResponseStatusException when token is invalid
+     */
+    public long checkAuthAndGetUserId(String auth) throws ExecutionException, InterruptedException {
+        var token = parseAuthCookie(auth);
 
+        @Language("SQL")
         String getUserSessionQuery = """
                 DECLARE $user_id AS uint64;
-                DECLARE $user_session_token AS utf8;
-                SELECT `user_id`, `user_session_token`, `user_session_expiry`
-                FROM `sessions`
-                WHERE `user_id`==$user_id and `user_session_token`==$user_session_token;
+                DECLARE $session_token AS utf8;
+                SELECT user_id, session_token, session_expiry
+                FROM sessions
+                WHERE user_id==$user_id and session_token==$session_token;
                 """;
 
         var sessionQuery = db.supplyResult(session -> session.executeDataQuery(
                 getUserSessionQuery,
                 TxControl.serializableRw(),
                 Params.of(
-                        "$user_id", newUint64(id),
-                        "$user_session_token", newText(token)
+                        "$user_id", newUint64(token.userId()),
+                        "$session_token", newText(token.token())
                 )
         )).get();
 
@@ -312,19 +278,17 @@ public class Users {
             throw new ResponseStatusException(UNAUTHORIZED);
         }
 
-        String removeUserSessionQuery = """
-                DECLARE $user_id AS uint64;
-                DECLARE $user_session_token AS utf8;
-                DELETE from `sessions`
-                WHERE `user_id`==$user_id and `user_session_token`==$user_session_token;
-                """;
-        db.supplyResult(session -> session.executeDataQuery(
-                removeUserSessionQuery,
-                TxControl.serializableRw(),
-                Params.of(
-                        "$user_id", newUint64(id),
-                        "$user_session_token", newText(token)
-                )
-        )).get();
+        return token.userId;
     }
+
+    public record UserToken(long userId, String token) {
+        public static UserToken parseAuthCookie(String authCookie) {
+            var authParts = authCookie.split("-");
+            if (authParts.length != 2) {
+                throw new IllegalArgumentException("Bad token format");
+            }
+            return new UserToken(Long.parseUnsignedLong(authParts[0]), authParts[1]);
+        }
+    }
+
 }

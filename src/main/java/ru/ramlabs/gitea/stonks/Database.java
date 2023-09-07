@@ -1,46 +1,31 @@
 package ru.ramlabs.gitea.stonks;
 
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Component;
-import tech.ydb.auth.iam.CloudAuthHelper;
+import tech.ydb.auth.AuthRpcProvider;
 import tech.ydb.core.grpc.GrpcTransport;
-import tech.ydb.table.Session;
+import tech.ydb.core.impl.auth.GrpcAuthRpc;
 import tech.ydb.table.SessionRetryContext;
 import tech.ydb.table.TableClient;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
-
+@Slf4j
 @Component
 public class Database {
 
-    private static final Logger LOGGER = LoggerFactory.getLogger(Database.class);
-
     private final SessionRetryContext context;
 
-    public Database() {
-        GrpcTransport transport = GrpcTransport.forConnectionString("grpcs://ydb.serverless.yandexcloud.net:2135" +
-                        "?database=/ru-central1/b1grjtggdv5a082vgitq/etngjp5coftoqntqob9g")
-                .withAuthProvider(rpc -> {
-                    var keyPath = Path.of("authorized_key.json");
-                    if (Files.exists(keyPath)) {
-                        try {
-                            return CloudAuthHelper.getServiceAccountJsonAuthProvider(Files.readString(keyPath))
-                                    .createAuthIdentity(rpc);
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                    } else {
-                        return CloudAuthHelper.getMetadataAuthProvider().createAuthIdentity(rpc);
-                    }
-                })
+    public Database(@Value("${stonks.db.endpoint}") String databaseEndpoint,
+                    AuthRpcProvider<GrpcAuthRpc> dbAuthProvider
+    ) {
+        GrpcTransport transport = GrpcTransport.forConnectionString(databaseEndpoint)
+                .withAuthProvider(dbAuthProvider)
                 .build();
-        var client = TableClient.newClient(transport).build();
+        var client = TableClient.newClient(transport)
+                .sessionPoolSize(1, 20)
+                .build();
         context = SessionRetryContext.create(client).build();
     }
 
