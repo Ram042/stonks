@@ -1,11 +1,14 @@
 package ru.ramlabs.gitea.stonks.controllers;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 import ru.ramlabs.gitea.stonks.api.Accounts;
 import ru.ramlabs.gitea.stonks.api.Users;
+import ru.ramlabs.gitea.stonks.utils.UnsignedLongToString;
 
-import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 @RestController
@@ -19,47 +22,68 @@ public class AccountsController {
         this.users = users;
     }
 
+    public record GetUserAccountsParams(
+            @JsonProperty("start_at")
+            @JsonDeserialize(using = UnsignedLongToString.Deserializer.class)
+            long startAt
+    ) {
+
+    }
+
     @GetMapping(
             path = "/api/accounts",
-            produces = "application/json"
+            produces = "application/json",
+            consumes = "application/json"
     )
-    public List<Accounts.Account> getUserAccounts(@CookieValue String auth) throws ExecutionException, InterruptedException {
+    @PostMapping(
+            path = "/api/accounts",
+            produces = "application/json",
+            consumes = "application/json"
+    )
+    public Accounts.GetAccountsResult getUserAccounts(@CookieValue String auth, @RequestBody(required = false) GetUserAccountsParams params) throws ExecutionException, InterruptedException {
         long userId = users.checkAuthAndGetUserId(auth);
-        return accounts.getAccounts(userId);
+        return accounts.getUserAccounts(userId, params == null ? 0 : params.startAt);
     }
 
     public record CreateUserAccountParameters(
             String description,
-            @JsonProperty(required = true)
-            String name,
+            @JsonProperty("account_name")
+            String accountName,
             @JsonProperty("bank_id")
-            long bankId
+            Long bankId
     ) {
 
     }
 
     @PutMapping(
             path = "/api/accounts",
-            consumes = "application/json"
+            consumes = "application/json",
+            produces = "application/json"
     )
-    public void createUserAccount(@CookieValue String auth, CreateUserAccountParameters params) throws ExecutionException, InterruptedException {
+    public Accounts.Account createUserAccount(@CookieValue String auth, @RequestBody CreateUserAccountParameters params) throws ExecutionException, InterruptedException {
         long userId = users.checkAuthAndGetUserId(auth);
-        accounts.createUserAccount(userId, params.name, params.description, params.bankId);
+        if (params.accountName == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "account_name not set");
+        }
+        return accounts.createUserAccount(userId, params.accountName, params.description, params.bankId);
     }
 
     public record DeleteUserAccountParameters(
-            @JsonProperty("bank_id")
-            long bankId
-    ){
+            @JsonProperty("account_id")
+            long accountId
+    ) {
 
     }
 
     @DeleteMapping(path = "/api/accounts",
             consumes = "application/json"
     )
-    public void deleteUserAccount(@CookieValue String auth,DeleteUserAccountParameters params) throws ExecutionException, InterruptedException {
+    public void deleteUserAccount(@CookieValue String auth, @RequestBody DeleteUserAccountParameters params) throws ExecutionException, InterruptedException {
         long userId = users.checkAuthAndGetUserId(auth);
-//        accounts.deleteUserAccount(userId);
+        var deleted = accounts.deleteUserAccount(userId, params.accountId);
+        if (!deleted) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Account not found");
+        }
     }
 
 
