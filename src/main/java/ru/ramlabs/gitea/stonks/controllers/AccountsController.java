@@ -30,11 +30,6 @@ public class AccountsController {
 
     }
 
-    @GetMapping(
-            path = "/api/accounts",
-            produces = "application/json",
-            consumes = "application/json"
-    )
     @PostMapping(
             path = "/api/accounts",
             produces = "application/json",

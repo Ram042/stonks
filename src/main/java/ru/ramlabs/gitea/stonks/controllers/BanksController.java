@@ -38,7 +38,7 @@ public class BanksController {
 
     }
 
-    @GetMapping(path = "/api/banks",
+    @PostMapping(path = "/api/banks",
             produces = "application/json")
     public GetBanksResult getUserBanks(@CookieValue String auth) throws ExecutionException, InterruptedException {
         long userId = users.checkAuthAndGetUserId(auth);
