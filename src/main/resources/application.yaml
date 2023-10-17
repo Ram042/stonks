@@ -1,6 +1,7 @@
 spring:
   main:
     banner-mode: off
+    lazy-initialization: true
 server:
   error:
     include-message: always

@@ -17,6 +17,7 @@ import tech.ydb.table.SessionRetryContext;
 import tech.ydb.table.query.Params;
 import tech.ydb.table.settings.ExecuteDataQuerySettings;
 import tech.ydb.table.transaction.TxControl;
+import tech.ydb.table.values.OptionalValue;
 import tech.ydb.table.values.PrimitiveValue;
 
 import java.security.SecureRandom;
@@ -36,7 +37,12 @@ public class Accounts {
         this.db = db;
     }
 
-    public Account createUserAccount(long userId, String name, String description, @Nullable Long bankId) throws ExecutionException, InterruptedException {
+    public Account createUserAccount(
+            long userId,
+            String name,
+            @Nullable String description,
+            @Nullable Long bankId
+    ) throws ExecutionException, InterruptedException {
         @Language("SQL")
         var insertAccountQuery = """
                 DECLARE $user_id AS uint64;
@@ -63,7 +69,8 @@ public class Accounts {
                                 "$user_id", PrimitiveValue.newUint64(userId),
                                 "$account_id", PrimitiveValue.newUint64(newAccountId),
                                 "$account_name", PrimitiveValue.newText(name),
-                                "$account_description", description == null ? null : PrimitiveValue.newText(description),
+                                "$account_description",
+                                description == null ? null : OptionalValue.of(PrimitiveValue.newText(description)),
                                 "$bank_id", bankId == null ? null : PrimitiveValue.newUint64(bankId)
                         ),
                         new ExecuteDataQuerySettings().setReportCostInfo(true)))

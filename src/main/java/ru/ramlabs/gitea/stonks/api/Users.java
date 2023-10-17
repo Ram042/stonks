@@ -61,7 +61,7 @@ public class Users {
                 DECLARE $user_password AS utf8;
                                 
                 select ensure(0, count(*) = 0 ,"USER_EXISTS")
-                from users
+                from users view user_name_index
                 where user_name = $user_name;
                             
                 INSERT INTO users (user_id, user_name,user_password)
@@ -90,7 +90,7 @@ public class Users {
         }
 
         if (insertResult.getStatus().hasConsumedRu() && insertResult.getStatus().getConsumedRu() > 0) {
-            log.info("Consumed {} RU", insertResult.getStatus().getConsumedRu());
+            log.info("Register user consumed {} RU", insertResult.getStatus().getConsumedRu());
         }
 
         return name.toLowerCase();

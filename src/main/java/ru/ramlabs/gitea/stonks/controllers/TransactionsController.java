@@ -8,6 +8,7 @@ import ru.ramlabs.gitea.stonks.api.Users;
 import ru.ramlabs.gitea.stonks.utils.UnsignedLongToString;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.concurrent.ExecutionException;
 
 @RestController
@@ -61,4 +62,34 @@ public class TransactionsController {
         long userId = users.checkAuthAndGetUserId(auth);
         return transactions.createTransaction(userId, params.name, params.timestamp, params.comment);
     }
+
+    public record GetTransactionDeltasParams(
+            @JsonProperty("transaction_id")
+            @JsonDeserialize(using = UnsignedLongToString.Deserializer.class)
+            long transactionId
+    ) {
+
+    }
+
+    @PostMapping(
+            path = "/api/transactions/deltas",
+            produces = "application/json",
+            consumes = "application/json"
+    )
+    public List<Transactions.TransactionDelta> getTransactionDeltas(@CookieValue String auth, @RequestBody GetTransactionDeltasParams params)
+            throws ExecutionException, InterruptedException {
+        long userId = users.checkAuthAndGetUserId(auth);
+        return transactions.getTransactionDeltas(userId, params.transactionId);
+    }
+
+    @PostMapping(
+            path = "/api/transactions/deltas/types",
+            produces = "application/json",
+            consumes = "application/json"
+    )
+    public List<Transactions.DeltaType> getDeltaTypes(@CookieValue String auth) throws ExecutionException, InterruptedException {
+        users.checkAuthAndGetUserId(auth);
+        return transactions.getDeltaTypes();
+    }
+
 }

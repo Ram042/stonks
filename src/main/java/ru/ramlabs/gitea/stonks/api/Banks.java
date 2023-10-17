@@ -70,8 +70,8 @@ public class Banks {
             @JsonProperty("bank_id")
             @JsonSerialize(using = UnsignedLongToString.Serializer.class)
             long bankId,
-            @JsonProperty("bank_name") String bankName,
-            @JsonProperty("bank_comment") String bankComment
+            @JsonProperty("bank_name") String name,
+            @JsonProperty("bank_comment") String comment
     ) {
 
     }

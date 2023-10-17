@@ -1,0 +1,18 @@
+UPSERT
+INTO delta_types (delta_type_id, delta_type_multiplier, delta_type_name)
+VALUES
+(0,   -1, 'fee'),
+
+(100,  1, 'buy'),
+(101, -1, 'buy payment'),
+
+(200, -1, 'sell'),
+(201,  1, 'sell revenue'),
+
+(300,  1, 'deposit'),
+(301, -1, 'deposit payment'),
+(302,  1, 'deposit interest'),
+
+(400, -1, 'undeposit'),
+(401,  1, 'undeposit revenue'),
+(402,  1, 'undeposit interest');
